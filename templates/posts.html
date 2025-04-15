@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Recent Posts</title>
+</head>
+<body>
+<h1>Recent Posts</h1>
+{{range .Media}}
+<div>
+    <a href="{{.permalink}}">{{.caption}}</a><br>
+    {{if eq .media_type "IMAGE"}}
+    <img src="{{.media_url}}" width="200"><br>
+    {{end}}
+    <small>{{.timestamp}}</small>
+</div>
+<hr>
+{{end}}
+</body>
+</html>
