@@ -12,9 +12,13 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file if it exists
+	_ = godotenv.Load()
+
 	// Define command line flags
 	runServerCmd := flag.Bool("server", false, "Run the web server")
 	manualTokenCmd := flag.Bool("manual-token", false, "Run the manual token process directly")

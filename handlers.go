@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 func IndexHandler(cfg InstagramConfig) gin.HandlerFunc {
@@ -79,6 +82,13 @@ func ProcessManualTokenHandler() gin.HandlerFunc {
 			return
 		}
 
-		RenderRecentPostsJSON(c, userId, accessToken)
+		recentMedia, nil := FetchRecentMedia(userId, accessToken) // Fetch media to validate token
+		recentMediaJSON, err := json.Marshal(recentMedia)
+		if !errors.Is(nil, err) {
+			c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		c.JSON(http.StatusOK, string(recentMediaJSON))
 	}
 }

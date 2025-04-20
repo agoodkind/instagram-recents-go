@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Server Mode",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["--server"],
+            "envFile": "${workspaceFolder}/.env.local"
+        },
+        {
+            "name": "Launch Manual Token Mode",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["--manual-token"],
+            "envFile": "${workspaceFolder}/.env.local"
+        },
+        {
+            "name": "Manual Token with Custom Output",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["--manual-token", "--output", "${workspaceFolder}/output"],
+            "envFile": "${workspaceFolder}/.env.local"
+        }
+    ]
+}
