@@ -1,4 +1,4 @@
-name: Build and Commit Recent Media
+name: Generate & Commit Recent Media
 
 on:
   push:
