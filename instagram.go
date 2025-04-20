@@ -2,9 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"time"
 )
@@ -86,7 +84,7 @@ func RefreshToken(currentToken string) (*TokenResponse, error) {
 
 func FetchRecentMedia(userID, accessToken string) ([]map[string]interface{}, error) {
 	url := fmt.Sprintf(
-		"https://graph.instagram.com/%s/media?fields=id,caption,media_type,media_url,permalink,timestamp&access_token=%s",
+		"https://graph.instagram.com/%s/media?fields=id,media_type,media_url,permalink,timestamp&access_token=%s",
 		userID, accessToken,
 	)
 	resp, err := http.Get(url)
@@ -137,20 +135,4 @@ func GetUserIdFromToken(accessToken string) (string, error) {
 	}
 
 	return result.ID, nil
-}
-
-func RenderRecentPostsJSON(c *gin.Context, userId, accessToken string) {
-	recentMedia, nil := FetchRecentMedia(userId, accessToken) // Fetch media to validate token
-	recentMediaJSON, err := json.Marshal(recentMedia)
-	if !errors.Is(nil, err) {
-		c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	c.JSON(http.StatusInternalServerError, gin.H{
-		"accessToken": accessToken,
-		"userId":      userId,
-		"recentMedia": string(recentMediaJSON),
-	})
-	return
 }
