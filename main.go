@@ -46,10 +46,10 @@ func main() {
 
 // runManualTokenProcess executes the manual token process directly
 func runManualTokenProcess(outputDir string) {
-	// Get env variable DEVELOPMENT_ACCESS_TOKEN
-	accessToken := os.Getenv("DEVELOPMENT_ACCESS_TOKEN")
+	// Get env variable INSTAGRAM_DEVELOPMENT_ACCESS_TOKEN
+	accessToken := os.Getenv("INSTAGRAM_DEVELOPMENT_ACCESS_TOKEN")
 	if accessToken == "" {
-		fmt.Println("DEVELOPMENT_ACCESS_TOKEN is not set")
+		fmt.Println("INSTAGRAM_DEVELOPMENT_ACCESS_TOKEN is not set")
 		os.Exit(1)
 	}
 
