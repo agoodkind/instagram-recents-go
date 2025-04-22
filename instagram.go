@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -11,6 +12,19 @@ type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 	UserID      string `json:"user_id"`
 	ExpiresIn   int    `json:"expires_in"`
+}
+
+type Media struct {
+	ID           string `json:"id"`
+	MediaType    string `json:"media_type"`
+	MediaURL     string `json:"media_url"`
+	Permalink    string `json:"permalink"`
+	Timestamp    string `json:"timestamp"`
+	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+}
+
+type MediaResponse struct {
+	Data []Media `json:"data"`
 }
 
 // Validate a manually entered token by making a test API call
@@ -82,10 +96,19 @@ func RefreshToken(currentToken string) (*TokenResponse, error) {
 	return &token, err
 }
 
-func FetchRecentMedia(userID, accessToken string) ([]map[string]interface{}, error) {
+func FetchRecentMedia(userID, accessToken string) ([]Media, error) {
+	fields := []string{
+		"id",
+		"media_type",
+		"media_url",
+		"permalink",
+		"timestamp",
+		"thumbnail_url",
+	}
+	fieldsString := strings.Join(fields, ",")
 	url := fmt.Sprintf(
-		"https://graph.instagram.com/%s/media?fields=id,media_type,media_url,permalink,timestamp&access_token=%s",
-		userID, accessToken,
+		"https://graph.instagram.com/%s/media?fields=%s&access_token=%s",
+		userID, fieldsString, accessToken,
 	)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -93,9 +116,7 @@ func FetchRecentMedia(userID, accessToken string) ([]map[string]interface{}, err
 	}
 	defer resp.Body.Close()
 
-	var result struct {
-		Data []map[string]interface{} `json:"data"`
-	}
+	var result MediaResponse
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Data, err
 }
