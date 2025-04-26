@@ -22,7 +22,9 @@ func main() {
 	// Define command line flags
 	runServerCmd := flag.Bool("server", false, "Run the web server")
 	manualTokenCmd := flag.Bool("manual-token", false, "Run the manual token process directly")
-	outputDir := flag.String("output", ".", "Directory to save output files (for manual-token mode)")
+	outputFile := flag.String("output", "./output/recent_media.json", "Directory to save output files (for manual-token mode)")
+	fetchMediaFlag := flag.Bool("fetch-and-transform-media", false, "Fetch and transform media")
+	mediaDir := flag.String("media-dir", "./output/media", "Directory to save media files")
 	flag.Parse()
 
 	// If no flag is provided, show usage
@@ -35,7 +37,15 @@ func main() {
 	if *manualTokenCmd {
 		// Direct manual token process
 		fmt.Println("Running manual token process...")
-		runManualTokenProcess(*outputDir)
+		recentMedia, err := runManualTokenProcess(*outputFile)
+		if err != nil {
+			fmt.Println("Error running manual token process:", err)
+			os.Exit(1)
+		}
+		if *fetchMediaFlag {
+			fmt.Println("Fetching and transforming media...")
+			FetchAndTransformMedia(recentMedia, *mediaDir)
+		}
 		return
 	}
 
@@ -45,7 +55,7 @@ func main() {
 }
 
 // runManualTokenProcess executes the manual token process directly
-func runManualTokenProcess(outputDir string) {
+func runManualTokenProcess(outputFile string) ([]Media, error) {
 	// Get env variable INSTAGRAM_DEVELOPMENT_ACCESS_TOKEN
 	accessToken := os.Getenv("INSTAGRAM_DEVELOPMENT_ACCESS_TOKEN")
 	if accessToken == "" {
@@ -72,20 +82,22 @@ func runManualTokenProcess(outputDir string) {
 	}
 
 	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		fmt.Printf("Error creating output directory %s: %v\n", outputDir, err)
+	if err := os.MkdirAll(filepath.Dir(outputFile), 0755); err != nil {
+		fmt.Printf("Error creating output directory %s: %v\n", outputFile, err)
 		os.Exit(1)
 	}
 
 	// Write JSON to file
-	outputPath := filepath.Join(outputDir, "recent_media.json")
-	if err := os.WriteFile(outputPath, recentMediaJSON, 0644); err != nil {
-		fmt.Printf("Error writing to file %s: %v\n", outputPath, err)
+	if err := os.WriteFile(outputFile, recentMediaJSON, 0644); err != nil {
+		fmt.Printf("Error writing to file %s: %v\n", outputFile, err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully wrote recent media data to %s\n", outputPath)
+	fmt.Printf("Successfully wrote recent media data to %s\n", outputFile)
+	return recentMedia, nil
 }
+
+
 
 // runServer starts the web server with all routes
 func runServer(cfg InstagramConfig) {
