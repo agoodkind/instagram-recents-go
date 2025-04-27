@@ -22,7 +22,7 @@ func main() {
 	// Define command line flags
 	runServerCmd := flag.Bool("server", false, "Run the web server")
 	manualTokenCmd := flag.Bool("manual-token", false, "Run the manual token process directly")
-	outputFile := flag.String("output", "./output/recent_media.json", "Directory to save output files (for manual-token mode)")
+	outputDir := flag.String("output", "./output", "Directory to save output files (for manual-token mode)")
 	fetchMediaFlag := flag.Bool("fetch-and-transform-media", false, "Fetch and transform media")
 	mediaDir := flag.String("media-dir", "./output/media", "Directory to save media files")
 	flag.Parse()
@@ -37,14 +37,14 @@ func main() {
 	if *manualTokenCmd {
 		// Direct manual token process
 		fmt.Println("Running manual token process...")
-		recentMedia, err := runManualTokenProcess(*outputFile)
+		recentMedia, err := runManualTokenProcess(*outputDir)
 		if err != nil {
 			fmt.Println("Error running manual token process:", err)
 			os.Exit(1)
 		}
 		if *fetchMediaFlag {
 			fmt.Println("Fetching and transforming media...")
-			FetchAndTransformMedia(recentMedia, *mediaDir)
+			FetchAndTransformMedia(recentMedia, *mediaDir, *outputDir)
 		}
 		return
 	}
@@ -55,7 +55,7 @@ func main() {
 }
 
 // runManualTokenProcess executes the manual token process directly
-func runManualTokenProcess(outputFile string) ([]Media, error) {
+func runManualTokenProcess(outputDir string) ([]Media, error) {
 	// Get env variable INSTAGRAM_DEVELOPMENT_ACCESS_TOKEN
 	accessToken := os.Getenv("INSTAGRAM_DEVELOPMENT_ACCESS_TOKEN")
 	if accessToken == "" {
@@ -82,18 +82,18 @@ func runManualTokenProcess(outputFile string) ([]Media, error) {
 	}
 
 	// Ensure output directory exists
-	if err := os.MkdirAll(filepath.Dir(outputFile), 0755); err != nil {
-		fmt.Printf("Error creating output directory %s: %v\n", outputFile, err)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		fmt.Printf("Error creating output directory %s: %v\n", outputDir, err)
 		os.Exit(1)
 	}
 
 	// Write JSON to file
-	if err := os.WriteFile(outputFile, recentMediaJSON, 0644); err != nil {
-		fmt.Printf("Error writing to file %s: %v\n", outputFile, err)
+	if err := os.WriteFile(filepath.Join(outputDir, "recent_media.json"), recentMediaJSON, 0644); err != nil {
+		fmt.Printf("Error writing to file %s: %v\n", outputDir, err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully wrote recent media data to %s\n", outputFile)
+	fmt.Printf("Successfully wrote recent media data to %s\n", filepath.Join(outputDir, "recent_media.json"))
 	return recentMedia, nil
 }
 
