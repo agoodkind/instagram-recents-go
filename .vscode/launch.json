@@ -27,6 +27,15 @@
             "program": "${workspaceFolder}",
             "args": ["--manual-token", "--fetch-and-transform-media", "--media-dir", "${workspaceFolder}/output/media", "--output", "${workspaceFolder}/output"],
             "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Fetch and Transform Media",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["--fetch-and-transform-media", "--json-file", "${workspaceFolder}/output/recent_media.json", "--media-dir", "${workspaceFolder}/output/media", "--output", "${workspaceFolder}/output"],
+            "envFile": "${workspaceFolder}/.env"
         }
     ]
 }
