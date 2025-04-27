@@ -17,6 +17,7 @@ import (
 	"github.com/disintegration/imaging"
 	"github.com/kolesa-team/go-webp/encoder"
 	"github.com/kolesa-team/go-webp/webp"
+	"github.com/relvacode/iso8601"
 )
 
 // MediaFileVersionEntry represents information about a converted file
@@ -308,6 +309,22 @@ func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir stri
 	for entry := range resultChan {
 		mediaFilesArray = append(mediaFilesArray, entry)
 	}
+
+	// sort mediaFilesArray by timestamp
+	sort.Slice(mediaFilesArray, func(i, j int) bool {
+		// converrt timestamp to int
+		// timestamp is in format 2025-04-16T15:58:54+0000
+		timestampI, err := iso8601.ParseString(mediaFilesArray[i].Timestamp)
+		if err != nil {
+			return false
+		}
+		timestampJ, err := iso8601.ParseString(mediaFilesArray[j].Timestamp)
+		if err != nil {
+			return false
+		}
+
+		return timestampI.After(timestampJ)
+	})
 
 	// Update the counts
 	skippedCount := int(skippedCountAtomic)
