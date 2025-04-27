@@ -25,7 +25,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["--manual-token", "--fetch-and-transform-media", "--media-dir", "${workspaceFolder}/output/media"],
+            "args": ["--manual-token", "--fetch-and-transform-media", "--media-dir", "${workspaceFolder}/output/media", "--output", "${workspaceFolder}/output"],
             "envFile": "${workspaceFolder}/.env"
         }
     ]

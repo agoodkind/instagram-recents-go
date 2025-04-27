@@ -21,6 +21,7 @@ type Media struct {
 	Permalink    string `json:"permalink"`
 	Timestamp    string `json:"timestamp"`
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	IsSharedToFeed bool `json:"is_shared_to_feed,omitempty"`
 }
 
 type MediaResponse struct {
@@ -104,6 +105,7 @@ func FetchRecentMedia(userID, accessToken string) ([]Media, error) {
 		"permalink",
 		"timestamp",
 		"thumbnail_url",
+		"is_shared_to_feed",
 	}
 	fieldsString := strings.Join(fields, ",")
 	url := fmt.Sprintf(

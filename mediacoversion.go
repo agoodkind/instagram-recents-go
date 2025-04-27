@@ -8,8 +8,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/disintegration/imaging"
 	"github.com/kolesa-team/go-webp/encoder"
@@ -20,40 +21,60 @@ import (
 type ImageSize struct {
 	Width  int
 	Height int
+	Name   string
 }
 
 // ConvertedFileInfo represents information about a converted file
 type ConvertedFileInfo struct {
-	MediaID   string `json:"media_id"`
 	FileName  string `json:"file_name"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
+	Timestamp string `json:"timestamp"` // Added timestamp field
 	Format    string `json:"-"` // Excluded from JSON
 	Path      string `json:"-"` // Excluded from JSON
 	Size      int64  `json:"-"` // Excluded from JSON
 	Original  bool   `json:"-"` // Excluded from JSON
-	MediaType string `json:"-"` // Excluded from JSON
+	MediaType string `json:"-"` // Excluded from JSON (always "image" now)
+	MediaID   string `json:"-"` // Excluded from JSON
 }
 
-// MediaFilesMap represents a mapping from original files to their converted versions
-type MediaFilesMap map[string]struct {
-	Original ConvertedFileInfo   `json:"original"`
-	Versions []ConvertedFileInfo `json:"versions"`
+// MediaFileEntry represents a single media entry with original and versions
+type MediaFileEntry struct {
+	MediaID   string             `json:"media_id"`
+	Timestamp string             `json:"timestamp"`
+	Versions  map[string]ConvertedFileInfo `json:"versions"`
 }
+
+// MediaFilesArray represents an array of media file entries
+type MediaFilesArray []MediaFileEntry
 
 // Standard image sizes to generate
 var imageSizes = []ImageSize{
-	{Width: 1200, Height: 0},
-	{Width: 800, Height: 0},
-	{Width: 400, Height: 0},
-	{Width: 150, Height: 0},
+	{Width: 1200, Height: 0, Name: "large"},
+	{Width: 800, Height: 0, Name: "medium"},
+	{Width: 400, Height: 0, Name: "thumb"},
+	{Width: 160, Height: 0, Name: "small"},
 }
 
-// Maximum number of concurrent operations
-const (
-	maxConcurrentSizes  = 4 // Max concurrent image size processing
-	maxConcurrentMedia  = 3 // Max concurrent media items processing
-)
+// SortMediaByTimestamp sorts media items by timestamp in descending order (newest first)
+func SortMediaByTimestamp(mediaItems []Media) {
+	sort.Slice(mediaItems, func(i, j int) bool {
+		// Parse timestamps (format: 2023-04-21T12:34:56+0000)
+		timeI, errI := time.Parse(time.RFC3339, mediaItems[i].Timestamp)
+		timeJ, errJ := time.Parse(time.RFC3339, mediaItems[j].Timestamp)
+		
+		// If parsing fails, move items to the end
+		if errI != nil {
+			return false
+		}
+		if errJ != nil {
+			return true
+		}
+		
+		// Sort in descending order (newest first)
+		return timeI.After(timeJ)
+	})
+}
 
 // DownloadFile downloads a file from a URL to a local file
 func DownloadFile(url, filepath string) error {
@@ -126,10 +147,7 @@ func GetMediaType(url string) (string, string) {
 	fileExt := ".jpg" // Default extension
 	mediaType := "image" // Default type
 	
-	if strings.Contains(url, ".mp4") {
-		fileExt = ".mp4"
-		mediaType = "video"
-	} else if strings.Contains(url, ".jpg") {
+	if strings.Contains(url, ".jpg") {
 		fileExt = ".jpg"
 	} else if strings.Contains(url, ".png") {
 		fileExt = ".png"
@@ -181,25 +199,13 @@ func ProcessImage(url, mediaID, mediaDir string) ([]ConvertedFileInfo, error) {
 	// Determine file type and media type
 	fileExt, mediaType := GetMediaType(url)
 	
-	// Skip video files
-	if mediaType == "video" {
-		return nil, fmt.Errorf("video files are not processed for WebP conversion")
-	}
-	
-	// Setup directories
-	originalDir := filepath.Join(mediaDir, "original")
-	webpDir := filepath.Join(mediaDir, "webp")
-	
-	if err := EnsureDirectoryExists(originalDir); err != nil {
-		return nil, err
-	}
-	
-	if err := EnsureDirectoryExists(webpDir); err != nil {
+	// Ensure media directory exists
+	if err := EnsureDirectoryExists(mediaDir); err != nil {
 		return nil, err
 	}
 	
 	// Download original file
-	originalPath := filepath.Join(originalDir, mediaID+fileExt)
+	originalPath := filepath.Join(mediaDir, mediaID+fileExt)
 	if err := DownloadFile(url, originalPath); err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
@@ -226,98 +232,44 @@ func ProcessImage(url, mediaID, mediaDir string) ([]ConvertedFileInfo, error) {
 	
 	convertedFiles = append(convertedFiles, originalInfo)
 	
-	// Process each image size in parallel
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	semaphore := make(chan struct{}, maxConcurrentSizes)
-	
+	// Process each image size sequentially
 	for _, size := range imageSizes {
-		wg.Add(1)
-		currentSize := size
+		// Create temporary file to get dimensions after resize
+		tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("temp_%d.webp", size.Width))
+		actualHeight, err := ResizeAndConvertToWebP(originalPath, tempFile, size.Width, size.Height)
+		if err != nil {
+			fmt.Printf("Error calculating dimensions for %s at size %d: %v\n", mediaID, size.Width, err)
+			continue
+		}
 		
-		go func() {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-			
-			// Create temporary file to get dimensions after resize
-			tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("temp_%d.webp", currentSize.Width))
-			actualHeight, err := ResizeAndConvertToWebP(originalPath, tempFile, currentSize.Width, currentSize.Height)
-			if err != nil {
-				fmt.Printf("Error calculating dimensions for %s at size %d: %v\n", mediaID, currentSize.Width, err)
-				return
-			}
-			
-			// Create final WebP file
-			webpFilename := fmt.Sprintf("%s_%dx%d.webp", mediaID, currentSize.Width, actualHeight)
-			webpPath := filepath.Join(webpDir, webpFilename)
-			
-			_, err = ResizeAndConvertToWebP(originalPath, webpPath, currentSize.Width, currentSize.Height)
-			if err != nil {
-				fmt.Printf("Error processing size %dx%d for %s: %v\n", currentSize.Width, actualHeight, mediaID, err)
-				return
-			}
-			
-			// Create file info for this size
-			webpInfo, err := CreateFileInfo(
-				mediaID,
-				webpPath,
-				"webp",
-				mediaType,
-				currentSize.Width,
-				actualHeight,
-				false,
-			)
-			if err != nil {
-				fmt.Printf("Error creating file info for %s: %v\n", webpPath, err)
-				return
-			}
-			
-			mu.Lock()
-			convertedFiles = append(convertedFiles, webpInfo)
-			mu.Unlock()
-			
-			fmt.Printf("Created %s (%dx%d)\n", webpFilename, currentSize.Width, actualHeight)
-		}()
+		// Create final WebP file
+		webpFilename := fmt.Sprintf("%s_%dx%d.webp", mediaID, size.Width, actualHeight)
+		webpPath := filepath.Join(mediaDir, webpFilename)
+		
+		_, err = ResizeAndConvertToWebP(originalPath, webpPath, size.Width, size.Height)
+		if err != nil {
+			fmt.Printf("Error processing size %dx%d for %s: %v\n", size.Width, actualHeight, mediaID, err)
+			continue
+		}
+		
+		// Create file info for this size
+		webpInfo, err := CreateFileInfo(
+			mediaID,
+			webpPath,
+			"webp",
+			mediaType,
+			size.Width,
+			actualHeight,
+			false,
+		)
+		if err != nil {
+			fmt.Printf("Error creating file info for %s: %v\n", webpPath, err)
+			continue
+		}
+		
+		convertedFiles = append(convertedFiles, webpInfo)
+		fmt.Printf("Created %s (%dx%d)\n", webpFilename, size.Width, actualHeight)
 	}
-	
-	wg.Wait()
-	return convertedFiles, nil
-}
-
-// ProcessVideoFile downloads and tracks a video file
-func ProcessVideoFile(url, mediaID, mediaDir string) ([]ConvertedFileInfo, error) {
-	var convertedFiles []ConvertedFileInfo
-	
-	fileExt, mediaType := GetMediaType(url)
-	originalDir := filepath.Join(mediaDir, "original")
-	
-	if err := EnsureDirectoryExists(originalDir); err != nil {
-		return nil, err
-	}
-	
-	// Download the file
-	filename := filepath.Join(originalDir, mediaID+fileExt)
-	if err := DownloadFile(url, filename); err != nil {
-		return nil, fmt.Errorf("download failed: %w", err)
-	}
-	
-	// Create file info (no dimensions for video)
-	videoInfo, err := CreateFileInfo(
-		mediaID,
-		filename,
-		strings.TrimPrefix(fileExt, "."),
-		mediaType,
-		0, // No width for video
-		0, // No height for video
-		true,
-	)
-	if err != nil {
-		return nil, err
-	}
-	
-	convertedFiles = append(convertedFiles, videoInfo)
-	fmt.Printf("Successfully downloaded to %s\n", filename)
 	
 	return convertedFiles, nil
 }
@@ -336,17 +288,31 @@ func ProcessMedia(media Media, mediaDir string) ([]ConvertedFileInfo, error) {
 		return nil, fmt.Errorf("no URL available for media %s", media.ID)
 	}
 	
-	// Process based on media type
-	fileExt, _ := GetMediaType(url)
-	if fileExt == ".mp4" {
-		return ProcessVideoFile(url, media.ID, mediaDir)
-	} else {
-		return ProcessImage(url, media.ID, mediaDir)
+	// Skip non-image media (like videos)
+	if strings.Contains(url, ".mp4") {
+		fmt.Printf("Skipping non-image file: %s\n", media.ID)
+		return nil, nil
 	}
+	
+	// Process the image
+	files, err := ProcessImage(url, media.ID, mediaDir)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Add timestamp only to the original file (for sorting later)
+	for i := range files {
+		if files[i].Original {
+			files[i].Timestamp = media.Timestamp
+			break
+		}
+	}
+	
+	return files, nil
 }
 
-// FetchAndTransformMedia downloads and processes multiple media items
-func FetchAndTransformMedia(recentMedia []Media, mediaDir string) {
+// FetchAndTransformMedia downloads and processes multiple image items
+func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir string) {
 	if err := EnsureDirectoryExists(mediaDir); err != nil {
 		fmt.Printf("Error creating media directory: %v\n", err)
 		return
@@ -354,71 +320,130 @@ func FetchAndTransformMedia(recentMedia []Media, mediaDir string) {
 	
 	fmt.Printf("Downloading and processing %d media items...\n", len(recentMedia))
 	
+	// Sort media by timestamp (newest first)
+	SortMediaByTimestamp(recentMedia)
+	
 	var allConvertedFiles []ConvertedFileInfo
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, maxConcurrentMedia)
+	var processedCount int
+	var skippedCount int
 	
 	for i, media := range recentMedia {
-		wg.Add(1)
-		index := i
-		currentMedia := media
+		fmt.Printf("[%d/%d] Processing media ID: %s\n", i+1, len(recentMedia), media.ID)
 		
-		go func() {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-			
-			fmt.Printf("[%d/%d] Processing media ID: %s\n", index+1, len(recentMedia), currentMedia.ID)
-			
-			convertedFiles, err := ProcessMedia(currentMedia, mediaDir)
-			if err != nil {
-				fmt.Printf("Error processing media %s: %v\n", currentMedia.ID, err)
-				return
-			}
-			
-			mu.Lock()
-			allConvertedFiles = append(allConvertedFiles, convertedFiles...)
-			mu.Unlock()
-		}()
+		convertedFiles, err := ProcessMedia(media, mediaDir)
+		if err != nil {
+			fmt.Printf("Error processing media %s: %v\n", media.ID, err)
+			continue
+		}
+		
+		// Skip nil results (non-image files)
+		if convertedFiles == nil {
+			skippedCount++
+			continue
+		}
+		
+		allConvertedFiles = append(allConvertedFiles, convertedFiles...)
+		processedCount++
 	}
 	
-	wg.Wait()
-	
 	// Create the media files map
-	WriteMediaInfoJSON(allConvertedFiles, mediaDir)
-	fmt.Println("Media download and processing complete")
+	WriteMediaInfoJSON(allConvertedFiles, outputDir)
+	fmt.Printf("Image processing complete: %d processed, %d skipped\n", processedCount, skippedCount)
 }
 
 // WriteMediaInfoJSON creates and writes the media info JSON file
-func WriteMediaInfoJSON(allConvertedFiles []ConvertedFileInfo, mediaDir string) {
-	mediaFilesMap := make(MediaFilesMap)
+func WriteMediaInfoJSON(allConvertedFiles []ConvertedFileInfo, outputDir string) {
+	// Create a temporary map to organize the files
+	tempMap := make(map[string]struct {
+		Original ConvertedFileInfo
+		Versions map[string]ConvertedFileInfo
+		Timestamp string // Added timestamp for sorting
+	})
 	
-	// First pass: collect all original files
+	// First pass: collect all original files and initialize versions map
 	for _, file := range allConvertedFiles {
 		if file.Original {
-			mediaFilesMap[file.MediaID] = struct {
-				Original ConvertedFileInfo   `json:"original"`
-				Versions []ConvertedFileInfo `json:"versions"`
+			tempMap[file.MediaID] = struct {
+				Original ConvertedFileInfo
+				Versions map[string]ConvertedFileInfo
+				Timestamp string
 			}{
 				Original: file,
-				Versions: []ConvertedFileInfo{},
+				Versions: make(map[string]ConvertedFileInfo),
+				Timestamp: file.Timestamp, // Store timestamp for sorting
 			}
 		}
 	}
 	
-	// Second pass: add converted versions to their originals
+	// Second pass: add converted versions to their originals with named sizes
 	for _, file := range allConvertedFiles {
 		if !file.Original {
-			entry := mediaFilesMap[file.MediaID]
-			entry.Versions = append(entry.Versions, file)
-			mediaFilesMap[file.MediaID] = entry
+			entry := tempMap[file.MediaID]
+			
+			// Find the corresponding size name
+			sizeName := fmt.Sprintf("size_%d", file.Width) // default
+			for _, size := range imageSizes {
+				if size.Width == file.Width {
+					sizeName = size.Name
+					break
+				}
+			}
+			
+			// Remove timestamp from version files
+			versionFile := file
+			versionFile.Timestamp = "" // Clear timestamp from version
+			
+			entry.Versions[sizeName] = versionFile
+			tempMap[file.MediaID] = entry
 		}
 	}
 	
+	// Convert map to array format and include original in versions
+	mediaFilesArray := make(MediaFilesArray, 0, len(tempMap))
+	for mediaID, entry := range tempMap {
+		// Include original in the versions map but without timestamp
+		originalWithoutTimestamp := entry.Original
+		originalWithoutTimestamp.Timestamp = "" // Clear timestamp from the version
+		entry.Versions["original"] = originalWithoutTimestamp
+		
+		mediaFilesArray = append(mediaFilesArray, MediaFileEntry{
+			MediaID:   mediaID,
+			Timestamp: entry.Timestamp,
+			Versions:  entry.Versions,
+		})
+	}
+	
+	// Sort the final array by timestamp to maintain chronological order
+	sort.Slice(mediaFilesArray, func(i, j int) bool {
+		// Get timestamps
+		timeI := mediaFilesArray[i].Timestamp
+		timeJ := mediaFilesArray[j].Timestamp
+		
+		// Parse timestamps
+		parsedTimeI, errI := time.Parse(time.RFC3339, timeI)
+		parsedTimeJ, errJ := time.Parse(time.RFC3339, timeJ)
+		
+		// If parsing fails, move items to the end
+		if errI != nil {
+			return false
+		}
+		if errJ != nil {
+			return true
+		}
+		
+		// Sort in descending order (newest first)
+		return parsedTimeI.After(parsedTimeJ)
+	})
+	
+	// Create the output directory
+	if err := EnsureDirectoryExists(outputDir); err != nil {
+		fmt.Printf("Error creating output directory: %v\n", err)
+		return
+	}
+	
 	// Write the JSON file
-	mediaInfoPath := filepath.Join(mediaDir, "media_info.json")
-	mediaInfoJSON, err := json.MarshalIndent(mediaFilesMap, "", "  ")
+	mediaInfoPath := filepath.Join(outputDir, "media_info.json")
+	mediaInfoJSON, err := json.MarshalIndent(mediaFilesArray, "", "  ")
 	if err != nil {
 		fmt.Printf("Error creating JSON: %v\n", err)
 		return
