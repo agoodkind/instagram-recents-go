@@ -440,9 +440,9 @@ func WriteMediaInfoJSON(allConvertedFiles []ConvertedFileInfo, outputDir string)
 		fmt.Printf("Error creating output directory: %v\n", err)
 		return
 	}
-	
+
 	// Write the JSON file
-	mediaInfoPath := filepath.Join(outputDir, "media_info.json")
+	mediaInfoPath := filepath.Join(outputDir, "converted_media.json")
 	mediaInfoJSON, err := json.MarshalIndent(mediaFilesArray, "", "  ")
 	if err != nil {
 		fmt.Printf("Error creating JSON: %v\n", err)

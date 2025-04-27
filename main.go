@@ -25,13 +25,41 @@ func main() {
 	outputDir := flag.String("output", "./output", "Directory to save output files (for manual-token mode)")
 	fetchMediaFlag := flag.Bool("fetch-and-transform-media", false, "Fetch and transform media")
 	mediaDir := flag.String("media-dir", "./output/media", "Directory to save media files")
+	jsonFile := flag.String("json-file", "./output/recent_media.json", "Path to recent_media.json file to use instead of fetching from API")
 	flag.Parse()
 
 	// If no flag is provided, show usage
-	if !*runServerCmd && !*manualTokenCmd {
+	if !*runServerCmd && !*manualTokenCmd && !*fetchMediaFlag {
 		flag.Usage()
-		fmt.Println("\nPlease provide a command: --server or --manual-token")
+		fmt.Println("\nPlease provide a command: --server, --manual-token, or --fetch-and-transform-media")
 		os.Exit(1)
+	}
+
+	// If only fetch-and-transform-media flag is provided
+	if *fetchMediaFlag && !*manualTokenCmd && !*runServerCmd {
+		var recentMedia []Media
+
+		if *jsonFile != "" {
+			// Read from JSON file
+			jsonData, err := os.ReadFile(*jsonFile)
+			if err != nil {
+				fmt.Printf("Error reading JSON file %s: %v\n", *jsonFile, err)
+				os.Exit(1)
+			}
+
+			if err := json.Unmarshal(jsonData, &recentMedia); err != nil {
+				fmt.Printf("Error parsing JSON from file %s: %v\n", *jsonFile, err)
+				os.Exit(1)
+			}
+			fmt.Printf("Successfully loaded media data from %s\n", *jsonFile)
+		} else {
+			fmt.Println("No JSON file specified. Please use --json-file flag to provide a JSON file path.")
+			os.Exit(1)
+		}
+
+		fmt.Println("Fetching and transforming media...")
+		FetchAndTransformMedia(recentMedia, *mediaDir, *outputDir)
+		return
 	}
 
 	if *manualTokenCmd {
@@ -96,8 +124,6 @@ func runManualTokenProcess(outputDir string) ([]Media, error) {
 	fmt.Printf("Successfully wrote recent media data to %s\n", filepath.Join(outputDir, "recent_media.json"))
 	return recentMedia, nil
 }
-
-
 
 // runServer starts the web server with all routes
 func runServer(cfg InstagramConfig) {
