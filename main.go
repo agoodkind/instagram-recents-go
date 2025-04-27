@@ -22,7 +22,7 @@ func main() {
 	// Define command line flags
 	runServerCmd := flag.Bool("server", false, "Run the web server")
 	manualTokenCmd := flag.Bool("manual-token", false, "Run the manual token process directly")
-	outputDir := flag.String("output", "./output", "Directory to save output files (for manual-token mode)")
+	outputDir := flag.String("output-dir", "./output", "Directory to save output files (for manual-token mode)")
 	fetchMediaFlag := flag.Bool("fetch-and-transform-media", false, "Fetch and transform media")
 	mediaDir := flag.String("media-dir", "./output/media", "Directory to save media files")
 	jsonFile := flag.String("json-file", "./output/recent_media.json", "Path to recent_media.json file to use instead of fetching from API")
