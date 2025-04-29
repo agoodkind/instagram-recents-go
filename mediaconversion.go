@@ -9,11 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/disintegration/imaging"
 	"github.com/kolesa-team/go-webp/encoder"
@@ -41,30 +40,30 @@ var imageVersions = []struct {
 	Name  string
 }{
 	{Width: 1024, Name: "large"},
-	{Width: 512, Name: "medium"},
-	{Width: 256, Name: "small"},
+	{Width: 768, Name: "medium"},
+	{Width: 384, Name: "small"},
+	{Width: 256, Name: "thumb"},
 }
 
-// SortMediaByTimestamp sorts media items by timestamp in descending order (newest first)
-func SortMediaByTimestamp(mediaItems []Media) {
-	sort.Slice(mediaItems, func(i, j int) bool {
-		// Parse timestamps (format: 2023-04-21T12:34:56+0000)
-		timeI, errI := time.Parse(time.RFC3339, mediaItems[i].Timestamp)
-		timeJ, errJ := time.Parse(time.RFC3339, mediaItems[j].Timestamp)
+func timestampCompare(i, j MediaFileEntry) int {
+	// converrt timestamp to int
+	// timestamp is in format 2025-04-16T15:58:54+0000
+	timestampI, err := iso8601.ParseString(i.Timestamp)
+	if err != nil {
+		return 1 // i comes after j if i's timestamp is invalid
+	}
+	timestampJ, err := iso8601.ParseString(j.Timestamp)
+	if err != nil {
+		return -1 // j comes after i if j's timestamp is invalid
+	}
 
-		// If parsing fails, move items to the end
-		if errI != nil {
-			return false
-		}
-		if errJ != nil {
-			return true
-		}
-
-		// Sort in descending order (newest first)
-		return timeI.After(timeJ)
-	})
+	if timestampI.After(timestampJ) {
+		return -1 // i comes before j (descending order)
+	} else if timestampI.Before(timestampJ) {
+		return 1 // j comes before i (descending order)
+	}
+	return 0 // equal timestamps
 }
-
 
 // downloadImageToBytes downloads a file from a URL into memory
 func downloadImageToBytes(url string) ([]byte, error) {
@@ -91,9 +90,8 @@ type ResizeRes struct {
 	Error    error
 }
 
-
 // resizeImageBytesByWidthWebP resizes an in-memory image and converts it to WebP
-func resizeImageBytesByWidthWebP(imageData []byte, width, height int, baseFileName, outputDir string) ResizeRes {
+func resizeImageBytesByWidthWebP(imageData []byte, width, height int, baseFileName, outputDir, name string) ResizeRes {
 	// Open the source image from memory
 	src, err := imaging.Decode(bytes.NewReader(imageData))
 	if err != nil {
@@ -112,7 +110,7 @@ func resizeImageBytesByWidthWebP(imageData []byte, width, height int, baseFileNa
 
 	actualHeight := resized.Bounds().Dy()
 
-	destFileName := fmt.Sprintf("%s_%dw.webp", baseFileName, width)
+	destFileName := fmt.Sprintf("%s_%dw_%s.webp", baseFileName, width, name)
 	destPath := filepath.Join(outputDir, destFileName)
 
 	// Create output file
@@ -157,7 +155,7 @@ func processImage(url, mediaID, mediaDir string) ([]ImageVersionEntry, error) {
 
 	// Process each image size directly from memory
 	for _, size := range imageVersions {
-		resizeRes := resizeImageBytesByWidthWebP(imageData, size.Width, 0, mediaID, mediaDir)
+		resizeRes := resizeImageBytesByWidthWebP(imageData, size.Width, 0, mediaID, mediaDir, size.Name)
 		if resizeRes.Error != nil {
 			return nil, fmt.Errorf("failed to resize and convert to WebP: %w", resizeRes.Error)
 		}
@@ -269,20 +267,7 @@ func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir stri
 	}
 
 	// sort mediaFilesArray by timestamp
-	sort.Slice(mediaFilesArray, func(i, j int) bool {
-		// converrt timestamp to int
-		// timestamp is in format 2025-04-16T15:58:54+0000
-		timestampI, err := iso8601.ParseString(mediaFilesArray[i].Timestamp)
-		if err != nil {
-			return false
-		}
-		timestampJ, err := iso8601.ParseString(mediaFilesArray[j].Timestamp)
-		if err != nil {
-			return false
-		}
-
-		return timestampI.After(timestampJ)
-	})
+	slices.SortFunc(mediaFilesArray, timestampCompare)
 
 	// Update the counts
 	skippedCount := int(skippedCountAtomic)
