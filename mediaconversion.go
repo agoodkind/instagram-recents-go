@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -8,11 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/disintegration/imaging"
 	"github.com/kolesa-team/go-webp/encoder"
@@ -20,8 +20,8 @@ import (
 	"github.com/relvacode/iso8601"
 )
 
-// MediaFileVersionEntry represents information about a converted file
-type MediaFileVersionEntry struct {
+// ImageVersionEntry represents information about a converted file
+type ImageVersionEntry struct {
 	FileName string `json:"file_name"`
 	Width    int    `json:"width"`
 	Height   int    `json:"height"`
@@ -29,87 +29,73 @@ type MediaFileVersionEntry struct {
 
 // MediaFileEntry represents a single media entry with original and versions
 type MediaFileEntry struct {
-	MediaID   string                           `json:"media_id"`
-	Timestamp string                           `json:"timestamp"`
-	Versions  map[string]MediaFileVersionEntry `json:"versions"`
+	MediaID   string                       `json:"media_id"`
+	Timestamp string                       `json:"timestamp"`
+	Versions  map[string]ImageVersionEntry `json:"versions"`
 }
 
 // Standard image sizes to generate
-var imageWidths = []struct {
+var imageVersions = []struct {
 	Width int
 	Name  string
 }{
-	{Width: 1200, Name: "large"},
-	{Width: 800, Name: "medium"},
-	{Width: 400, Name: "thumb"},
-	{Width: 160, Name: "small"},
+	{Width: 1024, Name: "large"},
+	{Width: 768, Name: "medium"},
+	{Width: 384, Name: "small"},
+	{Width: 256, Name: "thumb"},
 }
 
-// SortMediaByTimestamp sorts media items by timestamp in descending order (newest first)
-func SortMediaByTimestamp(mediaItems []Media) {
-	sort.Slice(mediaItems, func(i, j int) bool {
-		// Parse timestamps (format: 2023-04-21T12:34:56+0000)
-		timeI, errI := time.Parse(time.RFC3339, mediaItems[i].Timestamp)
-		timeJ, errJ := time.Parse(time.RFC3339, mediaItems[j].Timestamp)
-
-		// If parsing fails, move items to the end
-		if errI != nil {
-			return false
-		}
-		if errJ != nil {
-			return true
-		}
-
-		// Sort in descending order (newest first)
-		return timeI.After(timeJ)
-	})
-}
-
-// DownloadFile downloads a file from a URL to a local file
-func DownloadFile(url, filepath string) error {
-	out, err := os.Create(filepath)
+func timestampCompare(i, j MediaFileEntry) int {
+	// converrt timestamp to int
+	// timestamp is in format 2025-04-16T15:58:54+0000
+	timestampI, err := iso8601.ParseString(i.Timestamp)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return 1 // i comes after j if i's timestamp is invalid
 	}
-	defer out.Close()
+	timestampJ, err := iso8601.ParseString(j.Timestamp)
+	if err != nil {
+		return -1 // j comes after i if j's timestamp is invalid
+	}
 
+	if timestampI.After(timestampJ) {
+		return -1 // i comes before j (descending order)
+	} else if timestampI.Before(timestampJ) {
+		return 1 // j comes before i (descending order)
+	}
+	return 0 // equal timestamps
+}
+
+// downloadImageToBytes downloads a file from a URL into memory
+func downloadImageToBytes(url string) ([]byte, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
+		return nil, fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
-	}
-
-	return nil
+	return io.ReadAll(resp.Body)
 }
 
 // ResizeByWidthWebP resizes an image and converts it to WebP format
 // Write the image to the destination path
 // Returns the actual height of the resized image
 type ResizeRes struct {
-	Height int
+	Height   int
+	Width    int
 	FileName string
-	Error  error
+	Error    error
 }
 
-func ResizeByWidthWebP(srcPath string, width, height int) ResizeRes {
-	// srcpath without extension
-	srcFileName := filepath.Base(srcPath)
-	srcFileDir := filepath.Dir(srcPath)
-	srcFileNameWithoutExt := strings.TrimSuffix(srcFileName, filepath.Ext(srcPath))
-
-	// Open the source image
-	src, err := imaging.Open(srcPath)
+// resizeImageBytesByWidthWebP resizes an in-memory image and converts it to WebP
+func resizeImageBytesByWidthWebP(imageData []byte, width, height int, baseFileName, outputDir, name string) ResizeRes {
+	// Open the source image from memory
+	src, err := imaging.Decode(bytes.NewReader(imageData))
 	if err != nil {
-		return ResizeRes{0, "", fmt.Errorf("failed to open image: %w", err)}
+		return ResizeRes{0, 0, "", fmt.Errorf("failed to decode image: %w", err)}
 	}
 
 	// Resize the image preserving aspect ratio
@@ -124,38 +110,27 @@ func ResizeByWidthWebP(srcPath string, width, height int) ResizeRes {
 
 	actualHeight := resized.Bounds().Dy()
 
-	destFileName := fmt.Sprintf("%s_%dx%d.webp", srcFileNameWithoutExt, width, actualHeight)
-	destPath := filepath.Join(srcFileDir, destFileName)
+	destFileName := fmt.Sprintf("%s_%dw_%s.webp", baseFileName, width, name)
+	destPath := filepath.Join(outputDir, destFileName)
 
 	// Create output file
 	output, err := os.Create(destPath)
 	if err != nil {
-		return ResizeRes{0, "", fmt.Errorf("failed to create output file: %w", err)}
+		return ResizeRes{0, 0, "", fmt.Errorf("failed to create output file: %w", err)}
 	}
 	defer output.Close()
 
 	// Configure WebP encoder and save the image
 	options, err := encoder.NewLossyEncoderOptions(encoder.PresetDefault, 80)
 	if err != nil {
-		return ResizeRes{0, "", fmt.Errorf("failed to create encoder options: %w", err)}
+		return ResizeRes{0, 0, "", fmt.Errorf("failed to create encoder options: %w", err)}
 	}
 
 	if err := webp.Encode(output, resized, options); err != nil {
-		return ResizeRes{actualHeight, destPath, fmt.Errorf("failed to encode to WebP: %w", err)}
+		return ResizeRes{actualHeight, width, destFileName, fmt.Errorf("failed to encode to WebP: %w", err)}
 	}
 
-	return ResizeRes{actualHeight, destFileName, nil}
-}
-
-// GetImageDimensions returns the width and height of an image
-func GetImageDimensions(imagePath string) (int, int, error) {
-	img, err := imaging.Open(imagePath)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to open image: %w", err)
-	}
-
-	bounds := img.Bounds()
-	return bounds.Dx(), bounds.Dy(), nil
+	return ResizeRes{actualHeight, width, destFileName, nil}
 }
 
 // EnsureDirectoryExists creates a directory if it doesn't exist
@@ -163,49 +138,30 @@ func EnsureDirectoryExists(path string) error {
 	return os.MkdirAll(path, 0755)
 }
 
-// ProcessImage downloads an image and converts it to multiple WebP sizes
-func ProcessImage(url, mediaID, mediaDir string) ([]MediaFileVersionEntry, error) {
-	var versions []MediaFileVersionEntry
-
-	// Determine file type and media type
-	fileExt := url[strings.LastIndex(url, "."):]
+// processImage downloads an image and converts it to multiple WebP sizes
+func processImage(url, mediaID, mediaDir string) ([]ImageVersionEntry, error) {
+	var versions []ImageVersionEntry
 
 	// Ensure media directory exists
 	if err := EnsureDirectoryExists(mediaDir); err != nil {
 		return nil, err
 	}
 
-	// Download original file
-	originalPath := filepath.Join(mediaDir, mediaID+fileExt)
-	if err := DownloadFile(url, originalPath); err != nil {
+	// Download original file to memory
+	imageData, err := downloadImageToBytes(url)
+	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
 
-	// Get original dimensions
-	width, height, err := GetImageDimensions(originalPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create original file info
-	originalInfo := MediaFileVersionEntry{
-		FileName: mediaID + fileExt,
-		Width:    width,
-		Height:   height,
-	}
-
-	versions = append(versions, originalInfo)
-
-	// Process each image size sequentially
-	for _, size := range imageWidths {
-
-		resizeRes := ResizeByWidthWebP(originalPath,  size.Width, 0)
+	// Process each image size directly from memory
+	for _, size := range imageVersions {
+		resizeRes := resizeImageBytesByWidthWebP(imageData, size.Width, 0, mediaID, mediaDir, size.Name)
 		if resizeRes.Error != nil {
 			return nil, fmt.Errorf("failed to resize and convert to WebP: %w", resizeRes.Error)
 		}
 
 		// Create file info for this size
-		webpInfo := MediaFileVersionEntry{
+		webpInfo := ImageVersionEntry{
 			FileName: resizeRes.FileName,
 			Width:    size.Width,
 			Height:   resizeRes.Height,
@@ -218,8 +174,8 @@ func ProcessImage(url, mediaID, mediaDir string) ([]MediaFileVersionEntry, error
 	return versions, nil
 }
 
-// ProcessMedia handles downloading, converting, and tracking a single media item
-func ProcessMedia(media Media, mediaDir string) ([]MediaFileVersionEntry, error) {
+// processMedia handles downloading, converting, and tracking a single media item
+func processMedia(media Media, mediaDir string) ([]ImageVersionEntry, error) {
 	// Determine which URL to use
 	var url string
 	if media.ThumbnailURL != "" {
@@ -239,7 +195,7 @@ func ProcessMedia(media Media, mediaDir string) ([]MediaFileVersionEntry, error)
 	}
 
 	// Process the image
-	files, err := ProcessImage(url, media.ID, mediaDir)
+	files, err := processImage(url, media.ID, mediaDir)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +222,7 @@ func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir stri
 			defer wg.Done()
 			fmt.Printf("[%d/%d] Processing media ID: %s\n", i+1, len(recentMedia), media.ID)
 
-			convertedFiles, err := ProcessMedia(media, mediaDir)
+			convertedFiles, err := processMedia(media, mediaDir)
 			if err != nil {
 				fmt.Printf("Error processing media %s: %v\n", media.ID, err)
 				return
@@ -278,10 +234,10 @@ func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir stri
 				return
 			}
 
-			versionMap := make(map[string]MediaFileVersionEntry)
+			versionMap := make(map[string]ImageVersionEntry)
 			for _, file := range convertedFiles {
 				// Find and store the corresponding size name
-				for _, size := range imageWidths {
+				for _, size := range imageVersions {
 					if size.Width == file.Width {
 						versionMap[size.Name] = file
 						break
@@ -311,32 +267,19 @@ func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir stri
 	}
 
 	// sort mediaFilesArray by timestamp
-	sort.Slice(mediaFilesArray, func(i, j int) bool {
-		// converrt timestamp to int
-		// timestamp is in format 2025-04-16T15:58:54+0000
-		timestampI, err := iso8601.ParseString(mediaFilesArray[i].Timestamp)
-		if err != nil {
-			return false
-		}
-		timestampJ, err := iso8601.ParseString(mediaFilesArray[j].Timestamp)
-		if err != nil {
-			return false
-		}
-
-		return timestampI.After(timestampJ)
-	})
+	slices.SortFunc(mediaFilesArray, timestampCompare)
 
 	// Update the counts
 	skippedCount := int(skippedCountAtomic)
 	processedCount := int(processedCountAtomic)
 
 	// Create the media files map
-	WriteMediaInfoJSON(mediaFilesArray, outputDir)
+	writeMediaInfoJSON(mediaFilesArray, outputDir)
 	fmt.Printf("Image processing complete: %d processed, %d skipped\n", processedCount, skippedCount)
 }
 
-// WriteMediaInfoJSON creates and writes the media info JSON file
-func WriteMediaInfoJSON(mediaFilesArray []MediaFileEntry, outputDir string) {
+// writeMediaInfoJSON creates and writes the media info JSON file
+func writeMediaInfoJSON(mediaFilesArray []MediaFileEntry, outputDir string) {
 	// Create the output directory
 	if err := EnsureDirectoryExists(outputDir); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
