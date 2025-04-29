@@ -34,7 +34,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["fetch-media", "--json-file", "${workspaceFolder}/output/recent_media.json", "--media-dir", "${workspaceFolder}/output/media", "--output-dir", "${workspaceFolder}/output"],
+            "args": ["manual-token", "--fetch-media", "--media-dir", "${workspaceFolder}/output/media", "--output-dir", "${workspaceFolder}/output"],
             "envFile": "${workspaceFolder}/.env"
         },
         {
