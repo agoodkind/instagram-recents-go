@@ -189,7 +189,7 @@ func processImages(media Media, mediaDir string) ([]ImageVersionEntry, error) {
 	}
 
 	// Skip non-image media (like videos)
-	if strings.Contains(url, ".mp4") || media.MediaType != "IMAGE" {
+	if strings.Contains(url, ".mp4") || !(media.MediaType == "IMAGE" || media.MediaType == "CAROUSEL_ALBUM") {
 		fmt.Printf("Skipping non-image file: %s\n", media.ID)
 		return nil, nil
 	}
