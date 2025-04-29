@@ -174,8 +174,8 @@ func processImage(url, mediaID, mediaDir string) ([]ImageVersionEntry, error) {
 	return versions, nil
 }
 
-// processMedia handles downloading, converting, and tracking a single media item
-func processMedia(media Media, mediaDir string) ([]ImageVersionEntry, error) {
+// processImages handles downloading, converting, and tracking a single media item
+func processImages(media Media, mediaDir string) ([]ImageVersionEntry, error) {
 	// Determine which URL to use
 	var url string
 	if media.ThumbnailURL != "" {
@@ -189,7 +189,7 @@ func processMedia(media Media, mediaDir string) ([]ImageVersionEntry, error) {
 	}
 
 	// Skip non-image media (like videos)
-	if strings.Contains(url, ".mp4") {
+	if strings.Contains(url, ".mp4") || media.MediaType != "IMAGE" {
 		fmt.Printf("Skipping non-image file: %s\n", media.ID)
 		return nil, nil
 	}
@@ -203,8 +203,8 @@ func processMedia(media Media, mediaDir string) ([]ImageVersionEntry, error) {
 	return files, nil
 }
 
-// FetchAndTransformMedia downloads and processes multiple image items
-func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir string) {
+// FetchAndTransformImages downloads and processes multiple image items
+func FetchAndTransformImages(recentMedia []Media, mediaDir string, outputDir string) {
 	if err := EnsureDirectoryExists(mediaDir); err != nil {
 		fmt.Printf("Error creating media directory: %v\n", err)
 		return
@@ -222,7 +222,7 @@ func FetchAndTransformMedia(recentMedia []Media, mediaDir string, outputDir stri
 			defer wg.Done()
 			fmt.Printf("[%d/%d] Processing media ID: %s\n", i+1, len(recentMedia), media.ID)
 
-			convertedFiles, err := processMedia(media, mediaDir)
+			convertedFiles, err := processImages(media, mediaDir)
 			if err != nil {
 				fmt.Printf("Error processing media %s: %v\n", media.ID, err)
 				return

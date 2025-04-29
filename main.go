@@ -58,7 +58,7 @@ func main() {
 		}
 
 		fmt.Println("Fetching and transforming media...")
-		FetchAndTransformMedia(recentMedia, *mediaDir, *outputDir)
+		FetchAndTransformImages(recentMedia, *mediaDir, *outputDir)
 		return
 	}
 
@@ -72,7 +72,7 @@ func main() {
 		}
 		if *fetchMediaFlag {
 			fmt.Println("Fetching and transforming media...")
-			FetchAndTransformMedia(recentMedia, *mediaDir, *outputDir)
+			FetchAndTransformImages(recentMedia, *mediaDir, *outputDir)
 		}
 		return
 	}
