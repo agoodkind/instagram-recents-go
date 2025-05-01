@@ -1,0 +1,19 @@
+name: Dispatch Dependent Workflows
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+
+run-name: "Dispatch Dependent Workflows"
+
+jobs:
+  dispatch_event:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Event to Dependent Repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: '${{ secrets.DEPENDENT_REPO_TOKEN }}'
+          repository: '${{ secrets.DEPENDENT_REPO }}'
+          event-type: 'Instagram-Recents-Go Main Updated'
