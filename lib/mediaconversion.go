@@ -31,6 +31,7 @@ type ImageVersionEntry struct {
 type MediaFileEntry struct {
 	MediaID   string                       `json:"media_id"`
 	Timestamp string                       `json:"timestamp"`
+	Permalink string                       `json:"permalink"`
 	Versions  map[string]ImageVersionEntry `json:"versions"`
 }
 
@@ -248,6 +249,7 @@ func FetchAndTransformImages(recentMedia []Media, mediaDir string, outputDir str
 			resultChan <- MediaFileEntry{
 				MediaID:   media.ID,
 				Timestamp: media.Timestamp,
+				Permalink: media.Permalink,
 				Versions:  versionMap,
 			}
 			atomic.AddInt32(&processedCountAtomic, 1)
