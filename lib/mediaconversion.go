@@ -135,7 +135,7 @@ func resizeImageBytesByWidthWebP(imageData []byte, width, height int, baseFileNa
 }
 
 // EnsureDirectoryExists creates a directory if it doesn't exist
-func EnsureDirectoryExists(path string) error {
+func ensureDirectoryExists(path string) error {
 	return os.MkdirAll(path, 0755)
 }
 
@@ -144,7 +144,7 @@ func processImage(url, mediaID, mediaDir string) ([]ImageVersionEntry, error) {
 	var versions []ImageVersionEntry
 
 	// Ensure media directory exists
-	if err := EnsureDirectoryExists(mediaDir); err != nil {
+	if err := ensureDirectoryExists(mediaDir); err != nil {
 		return nil, err
 	}
 
@@ -189,9 +189,10 @@ func processImages(media Media, mediaDir string) ([]ImageVersionEntry, error) {
 		return nil, fmt.Errorf("no URL available for media %s", media.ID)
 	}
 
-	// Skip non-image media (like videos)
-	if strings.Contains(url, ".mp4") || !(media.MediaType == "IMAGE" || media.MediaType == "CAROUSEL_ALBUM") {
-		fmt.Printf("Skipping non-image file: %s\n", media.ID)
+	// Skip media
+	// See: is_shared_to_feed on https://developers.facebook.com/docs/instagram-platform/reference/instagram-media
+	if strings.Contains(url, ".mp4") || (!media.IsSharedToFeed && media.MediaType == "VIDEO") {
+		fmt.Printf("Skipping file: %s\n", media.ID)
 		return nil, nil
 	}
 
@@ -206,7 +207,7 @@ func processImages(media Media, mediaDir string) ([]ImageVersionEntry, error) {
 
 // FetchAndTransformImages downloads and processes multiple image items
 func FetchAndTransformImages(recentMedia []Media, mediaDir string, outputDir string) {
-	if err := EnsureDirectoryExists(mediaDir); err != nil {
+	if err := ensureDirectoryExists(mediaDir); err != nil {
 		fmt.Printf("Error creating media directory: %v\n", err)
 		return
 	}
@@ -283,7 +284,7 @@ func FetchAndTransformImages(recentMedia []Media, mediaDir string, outputDir str
 // writeMediaInfoJSON creates and writes the media info JSON file
 func writeMediaInfoJSON(mediaFilesArray []MediaFileEntry, outputDir string) {
 	// Create the output directory
-	if err := EnsureDirectoryExists(outputDir); err != nil {
+	if err := ensureDirectoryExists(outputDir); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
 		return
 	}
