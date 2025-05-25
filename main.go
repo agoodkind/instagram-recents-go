@@ -10,5 +10,6 @@ func main() {
 	_ = godotenv.Load()
 
 	// Execute the root command
+	// 
 	cmd.Execute()
 }
