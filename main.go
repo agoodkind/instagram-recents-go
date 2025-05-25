@@ -9,6 +9,6 @@ func main() {
 	// Load .env file if it exists
 	_ = godotenv.Load()
 
-	// Execute the root command //.
+	// Execute the root command /
 	cmd.Execute()
 }
