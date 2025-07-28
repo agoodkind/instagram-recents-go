@@ -130,7 +130,7 @@ func ShouldRefreshToken(expiresAt int64) bool {
 // GetUserIdFromToken makes a call to the /me endpoint to get the user ID
 func GetUserIdFromToken(accessToken string) (string, error) {
 	url := fmt.Sprintf(
-		"https://graph.instagram.com/me?fields=id,username&access_token=%s",
+		"https://graph.instagram.com/me?fields=id&access_token=%s",
 		accessToken,
 	)
 	resp, err := http.Get(url)
@@ -145,7 +145,6 @@ func GetUserIdFromToken(accessToken string) (string, error) {
 
 	var result struct {
 		ID       string `json:"id"`
-		Username string `json:"username"`
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
