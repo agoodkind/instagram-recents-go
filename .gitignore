@@ -20,6 +20,10 @@ instagram-recents-go
 # Output directory
 output/
 
+# CI cache dirs (populated by GitHub Actions)
+.gomodcache/
+.gocache/
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
