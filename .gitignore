@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Built binary (go build -o instagram-recents-go)
+instagram-recents-go
+
 # Test binary, built with `go test -c`
 *.test
 
