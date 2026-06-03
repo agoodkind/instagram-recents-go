@@ -1,6 +1,6 @@
 module github.com/agoodkind/instagram-recents-go
 
-go 1.25.0
+go 1.26.4
 
 require (
 	github.com/disintegration/imaging v1.6.2
