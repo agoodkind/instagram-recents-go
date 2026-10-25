@@ -2,6 +2,8 @@ module github.com/agoodkind/instagram-recents-go
 
 go 1.26.4
 
+toolchain go1.27.3
+
 require (
 	github.com/disintegration/imaging v1.6.2
 	github.com/gin-contrib/sessions v1.1.2
